@@ -1,0 +1,252 @@
+<style>
+  #auth-button, #sign-up-button, #forgot-password-button {
+    position: absolute;
+    right: 20px;
+    z-index: 1000;
+    background-color: #A62626;
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    transition-duration: 0.4s;
+    cursor: pointer;
+  }
+  #auth-button {
+    top: 20px;
+  }
+  #sign-up-button {
+    top: 80px;
+  }
+  #forgot-password-button {
+    top: 140px;
+    background-color: #561E9C
+  }
+  #auth-button:hover, #sign-up-button:hover, #forgot-password-button:hover {
+    background-color: #45a049;
+  }
+</style>
+
+<button id="auth-button">Sign in</button>
+<button id="sign-up-button">Sign up</button>
+<button id="forgot-password-button">Forgot Password</button>
+
+<script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-firestore.js"></script>
+
+<script>
+  // Initialize Firebase
+  var firebaseConfig = {
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: "",
+    measurementId: ""
+  };
+  firebase.initializeApp(firebaseConfig);
+
+  var db = firebase.firestore();
+
+  var authButton = document.getElementById('auth-button');
+  var signUpButton = document.getElementById('sign-up-button');
+  var forgotPasswordButton = document.getElementById('forgot-password-button');
+
+  // Recaptcha verifier for the sign up and password reset functions
+  var recaptchaVerifier = new firebase.auth.RecaptchaVerifier('sign-up-button', {
+    'size': 'invisible',
+    'callback': function(response) {
+      signUp();
+    }
+  });
+
+  function signInSignUp() {
+    if (authButton.textContent == 'Sign in') {
+      var email = prompt("Please enter your email:");
+      var password = prompt("Please enter your password:");
+
+      firebase.auth().signInWithEmailAndPassword(email, password)
+        .then((userCredential) => {
+          // Signed in 
+          var user = userCredential.user;
+          location.reload();
+        })
+        .catch((error) => {
+          var errorCode = error.code;
+          var errorMessage = error.message;
+          alert("Error: " + errorMessage);
+        });
+    } else if (authButton.textContent == 'Sign out') {
+      firebase.auth().signOut().then(() => {
+        location.reload();
+      });
+    }
+  }
+
+  function signUp() {
+    var phoneNumber = prompt("Please enter your phone number:");
+    var appVerifier = window.recaptchaVerifier;
+    firebase.auth().signInWithPhoneNumber(phoneNumber, appVerifier)
+      .then(function (confirmationResult) {
+        window.confirmationResult = confirmationResult;
+        var verificationCode = prompt("Please enter the verification code that was sent to your mobile device.");
+        confirmationResult.confirm(verificationCode)
+          .then(function (result) {
+            var user = result.user;
+            location.reload();
+          }).catch((error) => {
+            var errorCode = error.code;
+            var errorMessage = error.message;
+            alert("Error: " + errorMessage);
+          });
+      }).catch(function (error) {
+        var errorCode = error.code;
+        var errorMessage = error.message;
+        alert("Error: " + errorMessage);
+      });
+  }
+
+  function forgotPassword() {
+    var recoveryOption = prompt("Enter 'email' to reset via email, or 'phone' to reset via phone:");
+    if (recoveryOption == 'email') {
+      var email = prompt("Please enter your email:");
+      firebase.auth().sendPasswordResetEmail(email)
+        .then(() => {
+          alert('Password reset email sent!');
+        })
+        .catch((error) => {
+          var errorCode = error.code;
+          var errorMessage = error.message;
+          alert("Error: " + errorMessage);
+        });
+    } else if (recoveryOption == 'phone') {
+      var phoneNumber = prompt("Please enter your phone number:");
+      var appVerifier = window.recaptchaVerifier;
+      firebase.auth().signInWithPhoneNumber(phoneNumber, appVerifier)
+        .then(function (confirmationResult) {
+          window.confirmationResult = confirmationResult;
+          var verificationCode = prompt("Please enter the verification code that was sent to your mobile device.");
+          confirmationResult.confirm(verificationCode)
+            .then(function (result) {
+              var user = result.user;
+              user.updatePassword(prompt("Enter new password:")).then(function() {
+                alert("Password reset successful.");
+              }).catch(function(error) {
+                var errorCode = error.code;
+                var errorMessage = error.message;
+                alert("Error: " + errorMessage);
+              });
+            }).catch((error) => {
+              var errorCode = error.code;
+              var errorMessage = error.message;
+              alert("Error: " + errorMessage);
+            });
+        }).catch(function (error) {
+          var errorCode = error.code;
+          var errorMessage = error.message;
+          alert("Error: " + errorMessage);
+        });
+    } else {
+      alert("Invalid recovery option.");
+    }
+  }
+
+  authButton.addEventListener('click', signInSignUp);
+  signUpButton.addEventListener('click', function() {
+    recaptchaVerifier.render().then(function(widgetId) {
+      window.recaptchaWidgetId = widgetId;
+    });
+  });
+  forgotPasswordButton.addEventListener('click', forgotPassword);
+
+  function setupLikeButton(user, likeButton, likeCount, postId) {
+    // Get the current like count when the page loads.
+    db.collection('posts').doc(postId).get().then((doc) => {
+      if (doc.exists) {
+        likeCount.textContent = doc.data().likes || 0;
+      } else {
+        likeCount.textContent = 0;
+        db.collection('posts').doc(postId).set({
+          likes: 0
+        });
+      }
+    });
+
+    // Check if the current user has already liked this post.
+    db.collection('likes').where('userId', '==', user.uid).where('postId', '==', postId).get().then((querySnapshot) => {
+      if (!querySnapshot.empty) {
+        likeButton.textContent = 'Unlike';
+      }
+    });
+
+    // Toggle the like when the like button is clicked.
+    likeButton.addEventListener('click', function() {
+      db.collection('likes').where('userId', '==', user.uid).where('postId', '==', postId).get().then((querySnapshot) => {
+        if (!querySnapshot.empty) {
+          // User has already liked this post, so unlike it.
+          querySnapshot.docs[0].ref.delete().then(() => {
+            likeButton.textContent = 'Like';
+            db.collection('posts').doc(postId).update({
+              likes: firebase.firestore.FieldValue.increment(-1)
+            }).then(() => {
+              likeCount.textContent = parseInt(likeCount.textContent) - 1;
+            });
+          });
+        } else {
+          // User has not liked this post yet, so like it.
+          db.collection('likes').add({
+            userId: user.uid,
+            postId: postId
+          }).then(() => {
+            likeButton.textContent = 'Unlike';
+            db.collection('posts').doc(postId).update({
+              likes: firebase.firestore.FieldValue.increment(1)
+            }, { merge: true }).then(() => {
+              likeCount.textContent = parseInt(likeCount.textContent) + 1;
+            });
+          });
+        }
+      });
+    });
+  }
+
+  function setupAllLikeButtons(user) {
+    var likeButtons = document.getElementsByClassName('like-button');
+    var likeCounts = document.getElementsByClassName('like-count');
+
+    for (var i = 0; i < likeButtons.length; i++) {
+      var likeButton = likeButtons[i];
+      var postId = likeButton.getAttribute('data-post-id'); // Get the post ID from the data-post-id attribute.
+
+      // Find the corresponding like count.
+      var likeCount;
+      for (var j = 0; j < likeCounts.length; j++) {
+        if (likeCounts[j].getAttribute('data-post-id') === postId) {
+          likeCount = likeCounts[j];
+          break;
+        }
+      }
+
+      setupLikeButton(user, likeButton, likeCount, postId);
+    }
+  }
+
+  firebase.auth().onAuthStateChanged(function(user) {
+    if (user) {
+      // User is signed in.
+      authButton.textContent = 'Sign out';
+      signUpButton.style.display = 'none';
+      forgotPasswordButton.style.display = 'none';
+      setupAllLikeButtons(user);
+    } else {
+      // User is signed out.
+      authButton.textContent = 'Sign in';
+      signUpButton.style.display = 'block';
+      forgotPasswordButton.style.display = 'block';
+    }
+  });
+</script>
